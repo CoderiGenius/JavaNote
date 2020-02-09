@@ -96,3 +96,70 @@ static class DefaultThreadFactory implements ThreadFactory {
     }
 }
 ```
+#### 拒绝策略-handler
+所谓拒绝策略，就是当线程池满了、队列也满了的时候，我们对任务采取的措施。或者丢弃、或者执行、或者其他...
+
+jdk自带4种拒绝策略，我们来看看。
+
+- CallerRunsPolicy // 在调用者线程执行
+- AbortPolicy // 直接抛出RejectedExecutionException异常
+- DiscardPolicy // 任务直接丢弃，不做任何处理
+- DiscardOldestPolicy // 丢弃队列里最旧的那个任务，再尝试执行当前任务
+
+这四种策略各有优劣，比较常用的是DiscardPolicy，但是这种策略有一个弊端就是任务执行的轨迹不会被记录下来。所以，我们往往需要实现自定义的拒绝策略， 通过实现RejectedExecutionHandler接口的方式。
+
+### 提交任务的几种方式
+- execute()用于提交不需要返回结果的任务，我们看一个例子。
+- submit()用于提交一个需要返回果的任务。该方法返回一个Future对象，通过调用这个对象的get()方法，我们就能获得返回结果。get()方法会一直阻塞，直到返回结果返回。另外，我们也可以使用它的重载方法get(long timeout, TimeUnit unit)，这个方法也会阻塞，但是在超时时间内仍然没有返回结果时，将抛出异常TimeoutException。
+
+### 关闭线程池
+- shutdown()会将线程池状态置为SHUTDOWN，不再接受新的任务，同时会等待线程池中已有的任务执行完成再结束。
+- shutdownNow()会将线程池状态置为SHUTDOWN，对所有线程执行interrupt()操作，清空队列，并将队列中的任务返回回来。
+### 如何正确配置线程池的参数
+- 任务的性质：CPU密集型、IO密集型和混杂型
+- 任务的优先级：高中低
+- 任务执行的时间：长中短
+- 任务的依赖性：是否依赖数据库或者其他系统资源
+### 线程池监控
+首先，ThreadPoolExecutor自带了一些方法。
+- long getTaskCount()，获取已经执行或正在执行的任务数
+- long getCompletedTaskCount()，获取已经执行的任务数
+- int getLargestPoolSize()，获取线程池曾经创建过的最大线程数，根据这个参数，我们可以知道线程池是否满过
+- int getPoolSize()，获取线程池线程数
+- int getActiveCount()，获取活跃线程数（正在执行任务的线程数）
+
+例子：
+```
+ThreadPoolExecutor  threadPoolExecutor=(ThreadPoolExecutor) executor;
+threadPoolExecutor.getPoolSize();
+```
+
+其次，ThreadPoolExecutor留给我们自行处理的方法有3个，它在ThreadPoolExecutor中为空实现（也就是什么都不做）。
+
+- protected void beforeExecute(Thread t, Runnable r) // 任务执行前被调用
+- protected void afterExecute(Runnable r, Throwable t) // 任务执行后被调用
+- protected void terminated() // 线程池结束后被调用
+
+例子：
+```
+public class ThreadPoolTest {
+    public static void main(String[] args) {
+        ExecutorService executor = new ThreadPoolExecutor(1, 1, 1, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1)) {
+            @Override protected void beforeExecute(Thread t, Runnable r) {
+                System.out.println("beforeExecute is called");
+            }
+            @Override protected void afterExecute(Runnable r, Throwable t) {
+                System.out.println("afterExecute is called");
+            }
+            @Override protected void terminated() {
+                System.out.println("terminated is called");
+            }
+        };
+
+        executor.submit(() -> System.out.println("this is a task"));
+        executor.shutdown();
+    }
+}
+```
+### 一个特殊的问题
+在使用submit()的时候一定要注意它的返回对象Future，为了避免任务执行异常被吞掉的问题，我们需要调用Future.get()方法。另外，使用execute()将不会出现这种问题。
